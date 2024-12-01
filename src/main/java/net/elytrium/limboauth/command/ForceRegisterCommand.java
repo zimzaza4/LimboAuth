@@ -23,6 +23,8 @@ import com.velocitypowered.api.command.SimpleCommand;
 import java.sql.SQLException;
 import java.text.MessageFormat;
 import java.util.Locale;
+
+import com.velocitypowered.api.util.UuidUtils;
 import net.elytrium.commons.kyori.serialization.Serializer;
 import net.elytrium.limboauth.LimboAuth;
 import net.elytrium.limboauth.Settings;
@@ -71,7 +73,7 @@ public class ForceRegisterCommand extends RatelimitedCommand {
           return;
         }
 
-        RegisteredPlayer player = new RegisteredPlayer(nickname, "", "").setPassword(password);
+        RegisteredPlayer player = new RegisteredPlayer(nickname, UuidUtils.generateOfflinePlayerUuid(nickname).toString(), "").setPassword(password);
         this.playerDao.create(player);
 
         source.sendMessage(serializer.deserialize(MessageFormat.format(this.successful, nickname)));

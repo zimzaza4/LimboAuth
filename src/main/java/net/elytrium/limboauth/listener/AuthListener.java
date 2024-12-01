@@ -32,8 +32,10 @@ import com.velocitypowered.proxy.connection.client.InitialInboundConnection;
 import com.velocitypowered.proxy.connection.client.LoginInboundConnection;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.net.InetSocketAddress;
 import java.sql.SQLException;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import net.elytrium.commons.utils.reflection.ReflectionException;
@@ -76,8 +78,13 @@ public class AuthListener {
 
     try {
       String username = event.getUsername();
+      Optional<InetSocketAddress> host = event.getConnection().getVirtualHost();
+      String hostString = "";
+      if (host.isPresent()) {
+        hostString = host.get().getHostString();
+      }
       if (!event.getResult().isForceOfflineMode()) {
-        if (this.plugin.isPremium(username)) {
+        if (this.plugin.isPremium(hostString)) {
           event.setResult(PreLoginEvent.PreLoginComponentResult.forceOnlineMode());
 
           try {
@@ -184,40 +191,6 @@ public class AuthListener {
 
   @Subscribe(order = PostOrder.FIRST)
   public void onGameProfileRequest(GameProfileRequestEvent event) {
-    if (Settings.IMP.MAIN.SAVE_UUID && (this.floodgateApi == null || !this.floodgateApi.isFloodgatePlayer(event.getOriginalProfile().getId()))) {
-      RegisteredPlayer registeredPlayer = AuthSessionHandler.fetchInfo(this.playerDao, event.getOriginalProfile().getId());
-
-      if (registeredPlayer != null && !registeredPlayer.getUuid().isEmpty()) {
-        event.setGameProfile(event.getOriginalProfile().withId(UUID.fromString(registeredPlayer.getUuid())));
-        return;
-      }
-      registeredPlayer = AuthSessionHandler.fetchInfo(this.playerDao, event.getUsername());
-
-      if (registeredPlayer != null) {
-        String currentUuid = registeredPlayer.getUuid();
-
-        if (currentUuid.isEmpty()) {
-          try {
-            registeredPlayer.setUuid(event.getGameProfile().getId().toString());
-            this.playerDao.update(registeredPlayer);
-          } catch (SQLException e) {
-            throw new SQLRuntimeException(e);
-          }
-        } else {
-          event.setGameProfile(event.getOriginalProfile().withId(UUID.fromString(currentUuid)));
-        }
-      }
-    } else if (event.isOnlineMode()) {
-      try {
-        UpdateBuilder<RegisteredPlayer, String> updateBuilder = this.playerDao.updateBuilder();
-        updateBuilder.where().eq(RegisteredPlayer.LOWERCASE_NICKNAME_FIELD, event.getUsername().toLowerCase(Locale.ROOT));
-        updateBuilder.updateColumnValue(RegisteredPlayer.HASH_FIELD, "");
-        updateBuilder.update();
-      } catch (SQLException e) {
-        throw new SQLRuntimeException(e);
-      }
-    }
-
     if (Settings.IMP.MAIN.FORCE_OFFLINE_UUID) {
       event.setGameProfile(event.getOriginalProfile().withId(UuidUtils.generateOfflinePlayerUuid(event.getUsername())));
     }

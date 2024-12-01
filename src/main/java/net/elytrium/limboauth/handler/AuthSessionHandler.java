@@ -135,6 +135,15 @@ public class AuthSessionHandler implements LimboSessionHandler {
 
     Serializer serializer = LimboAuth.getSerializer();
 
+    String name = RegisteredPlayer.getPlayerName(this.proxyPlayer);
+    RegisteredPlayer sameNamePlayer = fetchInfo(playerDao, name.toLowerCase());
+    if (sameNamePlayer != null && !sameNamePlayer.getNickname().equals(name)) {
+      this.proxyPlayer.disconnect(serializer.deserialize(
+              MessageFormat.format(wrongNicknameCaseKick, sameNamePlayer.getNickname().substring(Settings.IMP.MAIN.OFFLINE_MODE_PREFIX.length()), this.proxyPlayer.getUsername()))
+      );
+      return;
+    }
+
     if (this.playerInfo == null) {
       try {
         String ip = this.proxyPlayer.getRemoteAddress().getAddress().getHostAddress();
@@ -161,13 +170,6 @@ public class AuthSessionHandler implements LimboSessionHandler {
         throw new SQLRuntimeException(e);
       }
     } else {
-      if (!this.proxyPlayer.getUsername().equals(this.playerInfo.getNickname())) {
-        this.proxyPlayer.disconnect(serializer.deserialize(
-            MessageFormat.format(wrongNicknameCaseKick, this.playerInfo.getNickname(), this.proxyPlayer.getUsername()))
-        );
-        return;
-      }
-
       this.plugin.addAuthenticatingPlayer(player.getProxyPlayer().getUsername(), this);
     }
 
@@ -550,7 +552,7 @@ public class AuthSessionHandler implements LimboSessionHandler {
 
   public static RegisteredPlayer fetchInfo(Dao<RegisteredPlayer, String> playerDao, UUID uuid) {
     try {
-      List<RegisteredPlayer> playerList = playerDao.queryForEq(RegisteredPlayer.PREMIUM_UUID_FIELD, uuid.toString());
+      List<RegisteredPlayer> playerList = playerDao.queryForEq(RegisteredPlayer.UUID_FIELD, uuid.toString());
       return (playerList != null ? playerList.size() : 0) == 0 ? null : playerList.get(0);
     } catch (SQLException e) {
       throw new SQLRuntimeException(e);

@@ -46,7 +46,7 @@ public class RegisteredPlayer {
   @DatabaseField(canBeNull = false, columnName = NICKNAME_FIELD)
   private String nickname;
 
-  @DatabaseField(id = true, columnName = LOWERCASE_NICKNAME_FIELD)
+  @DatabaseField(columnName = LOWERCASE_NICKNAME_FIELD)
   private String lowercaseNickname;
 
   @DatabaseField(canBeNull = false, columnName = HASH_FIELD)
@@ -61,7 +61,7 @@ public class RegisteredPlayer {
   @DatabaseField(columnName = REG_DATE_FIELD)
   private Long regDate = System.currentTimeMillis();
 
-  @DatabaseField(columnName = UUID_FIELD)
+  @DatabaseField(id = true, columnName = UUID_FIELD)
   private String uuid = "";
 
   @DatabaseField(columnName = RegisteredPlayer.PREMIUM_UUID_FIELD, index = true)
@@ -92,9 +92,8 @@ public class RegisteredPlayer {
   }
 
   public RegisteredPlayer(Player player) {
-    this(player.getUsername(), player.getUniqueId(), player.getRemoteAddress());
+    this(getPlayerName(player), player.getUniqueId(), player.getRemoteAddress());
   }
-
   public RegisteredPlayer(String nickname, UUID uuid, InetSocketAddress ip) {
     this(nickname, uuid.toString(), ip.getAddress().getHostAddress());
   }
@@ -233,4 +232,13 @@ public class RegisteredPlayer {
 
     return this;
   }
+
+  public static String getPlayerName(Player player) {
+    String name = player.getUsername();
+    if (!player.isOnlineMode() && !name.startsWith(Settings.IMP.MAIN.OFFLINE_MODE_PREFIX)) {
+      name = Settings.IMP.MAIN.OFFLINE_MODE_PREFIX + name;
+    }
+    return name;
+  }
+
 }

@@ -114,9 +114,11 @@ public class Settings extends YamlConfig {
     @Comment("Used in unregister and premium commands.")
     public String CONFIRM_KEYWORD = "confirm";
     @Comment("This prefix will be added to offline mode players nickname")
-    public String OFFLINE_MODE_PREFIX = "";
+    public String OFFLINE_MODE_PREFIX = "-";
     @Comment("This prefix will be added to online mode players nickname")
     public String ONLINE_MODE_PREFIX = "";
+    @Comment("For example, off.zim.icu or offline.zim.icu")
+    public String OFFLINE_MODE_HOST_KEY = "off";
     @Comment({
         "If you want to migrate your database from another plugin, which is not using BCrypt.",
         "You can set an old hash algorithm to migrate from.",

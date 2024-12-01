@@ -230,6 +230,7 @@ public class LimboAuth {
     metrics.addCustomChart(new SimplePie("save_uuid", () -> String.valueOf(Settings.IMP.MAIN.SAVE_UUID)));
     metrics.addCustomChart(new SingleLineChart("registered_players", () -> Math.toIntExact(this.playerDao.countOf())));
 
+    /*
     this.server.getScheduler().buildTask(this, () -> {
       if (!UpdatesChecker.checkVersionByURL("https://raw.githubusercontent.com/Elytrium/LimboAuth/master/VERSION", Settings.IMP.VERSION)) {
         LOGGER.error("****************************************");
@@ -238,6 +239,8 @@ public class LimboAuth {
         LOGGER.error("****************************************");
       }
     }).schedule();
+
+     */
   }
 
   @SuppressFBWarnings(value = "NP_NULL_ON_SOME_PATH", justification = "LEGACY_AMPERSAND can't be null in velocity.")
@@ -363,7 +366,7 @@ public class LimboAuth {
     manager.register("unregister", new UnregisterCommand(this, this.playerDao), "unreg");
     manager.register("forceregister", new ForceRegisterCommand(this, this.playerDao), "forcereg");
     manager.register("forcelogin", new ForceLoginCommand(this));
-    manager.register("premium", new PremiumCommand(this, this.playerDao), "license");
+    // manager.register("premium", new PremiumCommand(this, this.playerDao), "license");
     manager.register("forceunregister", new ForceUnregisterCommand(this, this.server, this.playerDao), "forceunreg");
     manager.register("changepassword", new ChangePasswordCommand(this, this.playerDao), "changepass", "cp");
     manager.register("forcechangepassword", new ForceChangePasswordCommand(this, this.server, this.playerDao), "forcechangepass", "fcp");
@@ -558,10 +561,12 @@ public class LimboAuth {
 
   public void authPlayer(Player player) {
     boolean isFloodgate = !Settings.IMP.MAIN.FLOODGATE_NEED_AUTH && this.floodgateApi.isFloodgatePlayer(player.getUniqueId());
+    /*
     if (!isFloodgate && this.isForcedPreviously(player.getUsername()) && this.isPremium(player.getUsername())) {
       player.disconnect(this.reconnectKick);
       return;
     }
+     */
 
     if (this.getBruteforceAttempts(player.getRemoteAddress().getAddress()) >= Settings.IMP.MAIN.BRUTEFORCE_MAX_ATTEMPTS) {
       player.disconnect(this.bruteforceAttemptKick);
@@ -574,18 +579,15 @@ public class LimboAuth {
       return;
     }
 
-    RegisteredPlayer registeredPlayer = AuthSessionHandler.fetchInfo(this.playerDao, nickname);
+    RegisteredPlayer registeredPlayer = AuthSessionHandler.fetchInfo(this.playerDao, player.getUniqueId());
 
     boolean onlineMode = player.isOnlineMode();
     TaskEvent.Result result = TaskEvent.Result.NORMAL;
 
     if (onlineMode || isFloodgate) {
       if (registeredPlayer == null || registeredPlayer.getHash().isEmpty()) {
-        RegisteredPlayer nicknameRegisteredPlayer = registeredPlayer;
-        registeredPlayer = AuthSessionHandler.fetchInfo(this.playerDao, player.getUniqueId());
-
-        if (nicknameRegisteredPlayer != null && registeredPlayer == null && nicknameRegisteredPlayer.getHash().isEmpty()) {
-          registeredPlayer = nicknameRegisteredPlayer;
+        if (registeredPlayer != null) {
+          registeredPlayer.setNickname(player.getUsername());
           registeredPlayer.setPremiumUuid(player.getUniqueId().toString());
           try {
             this.playerDao.update(registeredPlayer);
@@ -593,8 +595,7 @@ public class LimboAuth {
             throw new SQLRuntimeException(e);
           }
         }
-
-        if (nicknameRegisteredPlayer == null && registeredPlayer == null && Settings.IMP.MAIN.SAVE_PREMIUM_ACCOUNTS) {
+        if (registeredPlayer == null && Settings.IMP.MAIN.SAVE_PREMIUM_ACCOUNTS) {
           registeredPlayer = new RegisteredPlayer(player).setPremiumUuid(player.getUniqueId());
 
           try {
@@ -873,16 +874,8 @@ public class LimboAuth {
     return this.setPremiumCacheLowercased(lowercaseNickname, true).isPremium();
   }
 
-  public boolean isPremium(String nickname) {
-    if (Settings.IMP.MAIN.FORCE_OFFLINE_MODE) {
-      return false;
-    } else {
-      if (Settings.IMP.MAIN.CHECK_PREMIUM_PRIORITY_INTERNAL) {
-        return checkIsPremiumAndCache(nickname, this::isPremiumInternal, this::isPremiumExternal);
-      } else {
-        return checkIsPremiumAndCache(nickname, this::isPremiumExternal, this::isPremiumInternal);
-      }
-    }
+  public boolean isPremium(String host) {
+    return !host.toLowerCase().contains(Settings.IMP.MAIN.OFFLINE_MODE_HOST_KEY.toLowerCase());
   }
 
   public CachedPremiumUser getPremiumCache(String nickname) {
