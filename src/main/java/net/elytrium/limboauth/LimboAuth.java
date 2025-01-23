@@ -54,10 +54,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.whitfin.siphash.SipHasher;
 import java.io.File;
 import java.io.IOException;
-import java.net.InetAddress;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.URLEncoder;
+import java.net.*;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -66,14 +63,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.SQLException;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -84,7 +74,6 @@ import java.util.stream.Stream;
 import net.elytrium.commons.kyori.serialization.Serializer;
 import net.elytrium.commons.kyori.serialization.Serializers;
 import net.elytrium.commons.utils.reflection.ReflectionException;
-import net.elytrium.commons.utils.updates.UpdatesChecker;
 import net.elytrium.limboapi.api.Limbo;
 import net.elytrium.limboapi.api.LimboFactory;
 import net.elytrium.limboapi.api.chunk.VirtualWorld;
@@ -97,7 +86,6 @@ import net.elytrium.limboauth.command.ForceLoginCommand;
 import net.elytrium.limboauth.command.ForceRegisterCommand;
 import net.elytrium.limboauth.command.ForceUnregisterCommand;
 import net.elytrium.limboauth.command.LimboAuthCommand;
-import net.elytrium.limboauth.command.PremiumCommand;
 import net.elytrium.limboauth.command.TotpCommand;
 import net.elytrium.limboauth.command.UnregisterCommand;
 import net.elytrium.limboauth.dependencies.DatabaseLibrary;
@@ -108,8 +96,10 @@ import net.elytrium.limboauth.event.PreRegisterEvent;
 import net.elytrium.limboauth.event.TaskEvent;
 import net.elytrium.limboauth.floodgate.FloodgateApiHolder;
 import net.elytrium.limboauth.handler.AuthSessionHandler;
+import net.elytrium.limboauth.handler.AuthTypeChooseHandler;
 import net.elytrium.limboauth.listener.AuthListener;
 import net.elytrium.limboauth.listener.BackendEndpointsListener;
+import net.elytrium.limboauth.model.AuthTypeRecord;
 import net.elytrium.limboauth.model.RegisteredPlayer;
 import net.elytrium.limboauth.model.SQLRuntimeException;
 import net.kyori.adventure.text.Component;
@@ -185,8 +175,10 @@ public class LimboAuth {
 
   private ConnectionSource connectionSource;
   private Dao<RegisteredPlayer, String> playerDao;
+  private Dao<AuthTypeRecord, String> authTypeDao;
   private Pattern nicknameValidationPattern;
   private Limbo authServer;
+  private Limbo chooseTypeServer;
 
   @Inject
   public LimboAuth(Logger logger, ProxyServer server, Metrics.Factory metricsFactory, @DataDirectory Path dataDirectory) {
@@ -268,6 +260,7 @@ public class LimboAuth {
 
     TaskEvent.reload();
     AuthSessionHandler.reload();
+    AuthTypeChooseHandler.reload();
 
     this.loginPremium = Settings.IMP.MAIN.STRINGS.LOGIN_PREMIUM.isEmpty() ? null : SERIALIZER.deserialize(Settings.IMP.MAIN.STRINGS.LOGIN_PREMIUM);
     if (Settings.IMP.MAIN.STRINGS.LOGIN_PREMIUM_TITLE.isEmpty() && Settings.IMP.MAIN.STRINGS.LOGIN_PREMIUM_SUBTITLE.isEmpty()) {
@@ -339,6 +332,7 @@ public class LimboAuth {
     try {
       try {
         TableUtils.createTableIfNotExists(this.connectionSource, RegisteredPlayer.class);
+        TableUtils.createTableIfNotExists(this.connectionSource, AuthTypeRecord.class);
       } catch (SQLException e) {
         if (!e.getMessage().contains("CREATE INDEX")) {
           throw e;
@@ -346,6 +340,7 @@ public class LimboAuth {
       }
 
       this.playerDao = DaoManager.createDao(this.connectionSource, RegisteredPlayer.class);
+      this.authTypeDao = DaoManager.createDao(this.connectionSource, AuthTypeRecord.class);
       this.migrateDb(this.playerDao);
     } catch (SQLException e) {
       throw new SQLRuntimeException(e);
@@ -398,6 +393,9 @@ public class LimboAuth {
     if (this.authServer != null) {
       this.authServer.dispose();
     }
+    if (this.chooseTypeServer != null) {
+      this.chooseTypeServer.dispose();
+    }
 
     this.authServer = this.factory
         .createLimbo(authWorld)
@@ -406,6 +404,12 @@ public class LimboAuth {
         .setGameMode(Settings.IMP.MAIN.GAME_MODE)
         .registerCommand(new LimboCommandMeta(this.filterCommands(Settings.IMP.MAIN.REGISTER_COMMAND)))
         .registerCommand(new LimboCommandMeta(this.filterCommands(Settings.IMP.MAIN.LOGIN_COMMAND)));
+
+    this.chooseTypeServer = this.factory
+            .createLimbo(authWorld)
+            .setName("LimboAuthTypeChoose")
+            .setWorldTime(Settings.IMP.MAIN.WORLD_TICKS)
+            .setGameMode(Settings.IMP.MAIN.GAME_MODE);
 
     if (Settings.IMP.MAIN.ENABLE_TOTP) {
       this.authServer.registerCommand(new LimboCommandMeta(this.filterCommands(Settings.IMP.MAIN.TOTP_COMMAND)));
@@ -534,6 +538,9 @@ public class LimboAuth {
   }
 
   public void cacheAuthUser(Player player) {
+    if (player.isOnlineMode()) {
+      return;
+    }
     String username = player.getUsername();
     String lowercaseUsername = username.toLowerCase(Locale.ROOT);
     this.cachedAuthChecks.put(lowercaseUsername, new CachedSessionUser(System.currentTimeMillis(), player.getRemoteAddress().getAddress(), username));
@@ -548,7 +555,40 @@ public class LimboAuth {
     this.premiumCache.remove(username);
   }
 
+  public boolean needChooseAuthType(Player player) {
+    if (floodgateApi != null && floodgateApi.isFloodgatePlayer(player.getUniqueId())) {
+      return false;
+    }
+    try {
+      AuthTypeRecord type = authTypeDao.queryForId(getOriginalName(player.getUsername()).toLowerCase());
+      if (type != null) {
+        return false;
+      }
+    } catch (SQLException e) {
+      e.printStackTrace();
+    }
+    Optional<InetSocketAddress> host = player.getVirtualHost();
+    String hostString = "";
+    if (host.isPresent()) {
+      hostString = host.get().getHostString();
+    }
+    if (hostString.toLowerCase().contains(Settings.IMP.MAIN.ONLINE_MODE_HOST_KEY.toLowerCase())) {
+      return false;
+    }
+    if (hostString.toLowerCase().contains(Settings.IMP.MAIN.OFFLINE_MODE_HOST_KEY.toLowerCase())) {
+      return false;
+    }
+    return true;
+  }
+
+  public void chooseAuthTypeForPlayer(Player player) {
+    this.chooseTypeServer.spawnPlayer(player, new AuthTypeChooseHandler(this.authTypeDao, player, this));
+  }
+
   public boolean needAuth(Player player) {
+    if (player.isOnlineMode()) {
+      return true;
+    }
     String username = player.getUsername();
     String lowercaseUsername = username.toLowerCase(Locale.ROOT);
     if (!this.cachedAuthChecks.containsKey(lowercaseUsername)) {
@@ -597,7 +637,6 @@ public class LimboAuth {
         }
         if (registeredPlayer == null && Settings.IMP.MAIN.SAVE_PREMIUM_ACCOUNTS) {
           registeredPlayer = new RegisteredPlayer(player).setPremiumUuid(player.getUniqueId());
-
           try {
             this.playerDao.create(registeredPlayer);
           } catch (SQLException e) {
@@ -627,6 +666,17 @@ public class LimboAuth {
           });
 
           result = TaskEvent.Result.BYPASS;
+        }
+      }
+    } else {
+      if (registeredPlayer != null) {
+        if (registeredPlayer.getNickname().equals(player.getUsername())) {
+          registeredPlayer.setNickname(player.getUsername());
+            try {
+                playerDao.update(registeredPlayer);
+            } catch (SQLException e) {
+                throw new SQLRuntimeException(e);
+            }
         }
       }
     }
@@ -681,7 +731,7 @@ public class LimboAuth {
   public void updateLoginData(Player player) throws SQLException {
     String lowercaseNickname = player.getUsername().toLowerCase(Locale.ROOT);
     UpdateBuilder<RegisteredPlayer, String> updateBuilder = this.playerDao.updateBuilder();
-    updateBuilder.where().eq(RegisteredPlayer.LOWERCASE_NICKNAME_FIELD, lowercaseNickname);
+    updateBuilder.where().eq(RegisteredPlayer.UUID_FIELD, player.getUniqueId().toString());
     updateBuilder.updateColumnValue(RegisteredPlayer.LOGIN_IP_FIELD, player.getRemoteAddress().getAddress().getHostAddress());
     updateBuilder.updateColumnValue(RegisteredPlayer.LOGIN_DATE_FIELD, System.currentTimeMillis());
     updateBuilder.update();
@@ -874,8 +924,24 @@ public class LimboAuth {
     return this.setPremiumCacheLowercased(lowercaseNickname, true).isPremium();
   }
 
-  public boolean isPremium(String host) {
-    return !host.toLowerCase().contains(Settings.IMP.MAIN.OFFLINE_MODE_HOST_KEY.toLowerCase());
+  public boolean isPremium(String host, String username) {
+    if (host.toLowerCase().contains(Settings.IMP.MAIN.ONLINE_MODE_HOST_KEY.toLowerCase())) {
+      return true;
+    }
+    if (host.toLowerCase().contains(Settings.IMP.MAIN.OFFLINE_MODE_HOST_KEY.toLowerCase())) {
+      return false;
+    }
+
+      try {
+        AuthTypeRecord type = authTypeDao.queryForId(username.toLowerCase());
+        if (type != null) {
+          return type.isOnline();
+        }
+      } catch (SQLException e) {
+          e.printStackTrace();
+      }
+
+      return false;
   }
 
   public CachedPremiumUser getPremiumCache(String nickname) {
@@ -968,6 +1034,10 @@ public class LimboAuth {
     return this.authServer;
   }
 
+  public LimboFactory getLimboFactory() {
+    return factory;
+  }
+
   public Pattern getNicknameValidationPattern() {
     return this.nicknameValidationPattern;
   }
@@ -982,6 +1052,13 @@ public class LimboAuth {
 
   public AuthSessionHandler getAuthenticatingPlayer(String nickname) {
     return this.authenticatingPlayers.get(nickname);
+  }
+
+  public String getOriginalName(String name) {
+    if (name.startsWith(Settings.IMP.MAIN.OFFLINE_MODE_PREFIX)) {
+      return name.substring(Settings.IMP.MAIN.OFFLINE_MODE_PREFIX.length());
+    }
+    return name;
   }
 
   public Map<String, AuthSessionHandler> getAuthenticatingPlayers() {

@@ -18,7 +18,6 @@
 package net.elytrium.limboauth.listener;
 
 import com.j256.ormlite.dao.Dao;
-import com.j256.ormlite.stmt.UpdateBuilder;
 import com.velocitypowered.api.event.PostOrder;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.PostLoginEvent;
@@ -26,6 +25,7 @@ import com.velocitypowered.api.event.connection.PreLoginEvent;
 import com.velocitypowered.api.event.connection.PreLoginEvent.PreLoginComponentResult;
 import com.velocitypowered.api.event.player.GameProfileRequestEvent;
 import com.velocitypowered.api.proxy.InboundConnection;
+import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.util.UuidUtils;
 import com.velocitypowered.proxy.connection.MinecraftConnection;
 import com.velocitypowered.proxy.connection.client.InitialInboundConnection;
@@ -34,9 +34,7 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.net.InetSocketAddress;
 import java.sql.SQLException;
-import java.util.Locale;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import net.elytrium.commons.utils.reflection.ReflectionException;
 import net.elytrium.limboapi.api.event.LoginLimboRegisterEvent;
@@ -45,7 +43,7 @@ import net.elytrium.limboauth.LimboAuth.CachedPremiumUser;
 import net.elytrium.limboauth.LimboAuth.PremiumState;
 import net.elytrium.limboauth.Settings;
 import net.elytrium.limboauth.floodgate.FloodgateApiHolder;
-import net.elytrium.limboauth.handler.AuthSessionHandler;
+import net.elytrium.limboauth.model.AccountType;
 import net.elytrium.limboauth.model.RegisteredPlayer;
 import net.elytrium.limboauth.model.SQLRuntimeException;
 import net.kyori.adventure.text.Component;
@@ -60,6 +58,7 @@ public class AuthListener {
   private final Dao<RegisteredPlayer, String> playerDao;
   private final FloodgateApiHolder floodgateApi;
   private final Component errorOccurred;
+  private final Component kickSameName;
 
   public AuthListener(LimboAuth plugin, Dao<RegisteredPlayer, String> playerDao, FloodgateApiHolder floodgateApi) {
     this.plugin = plugin;
@@ -67,6 +66,7 @@ public class AuthListener {
     this.floodgateApi = floodgateApi;
 
     this.errorOccurred = LimboAuth.getSerializer().deserialize(Settings.IMP.MAIN.STRINGS.ERROR_OCCURRED);
+    this.kickSameName = LimboAuth.getSerializer().deserialize(Settings.IMP.MAIN.STRINGS.KICK_SAME_NAME);
   }
 
   @Subscribe(order = PostOrder.LATE)
@@ -84,7 +84,7 @@ public class AuthListener {
         hostString = host.get().getHostString();
       }
       if (!event.getResult().isForceOfflineMode()) {
-        if (this.plugin.isPremium(hostString)) {
+        if (this.plugin.isPremium(hostString, event.getUsername())) {
           event.setResult(PreLoginEvent.PreLoginComponentResult.forceOnlineMode());
 
           try {
@@ -184,6 +184,10 @@ public class AuthListener {
       this.plugin.getPendingLogins().remove(event.getPlayer().getUsername());
     }
 
+    if (this.plugin.needChooseAuthType(event.getPlayer())) {
+      event.addOnJoinCallback(() -> this.plugin.chooseAuthTypeForPlayer(event.getPlayer()));
+    }
+
     if (this.plugin.needAuth(event.getPlayer())) {
       event.addOnJoinCallback(() -> this.plugin.authPlayer(event.getPlayer()));
     }
@@ -195,13 +199,62 @@ public class AuthListener {
       event.setGameProfile(event.getOriginalProfile().withId(UuidUtils.generateOfflinePlayerUuid(event.getUsername())));
     }
 
-    if (!event.isOnlineMode() && !Settings.IMP.MAIN.OFFLINE_MODE_PREFIX.isEmpty()) {
-      event.setGameProfile(event.getOriginalProfile().withName(Settings.IMP.MAIN.OFFLINE_MODE_PREFIX + event.getUsername()));
+    if (event.isOnlineMode()) {
+      for (Player player : this.plugin.getServer().getAllPlayers()) {
+        if (!player.isOnlineMode()) {
+          if (player.getUsername().equalsIgnoreCase(event.getOriginalProfile().getName())) {
+            player.disconnect(kickSameName);
+            updateOfflineName(event.getOriginalProfile().getName());
+          }
+        }
+      }
+      if (!Settings.IMP.MAIN.ONLINE_MODE_PREFIX.isEmpty()) {
+        event.setGameProfile(event.getOriginalProfile().withName(Settings.IMP.MAIN.ONLINE_MODE_PREFIX + event.getUsername()));
+      }
     }
 
-    if (event.isOnlineMode() && !Settings.IMP.MAIN.ONLINE_MODE_PREFIX.isEmpty()) {
-      event.setGameProfile(event.getOriginalProfile().withName(Settings.IMP.MAIN.ONLINE_MODE_PREFIX + event.getUsername()));
+    if (!event.isOnlineMode()) {
+      UUID uuid = UuidUtils.generateOfflinePlayerUuid(event.getUsername().toLowerCase(Locale.ROOT));
+      event.setGameProfile(event.getOriginalProfile().withId(uuid));
+      event.setGameProfile(event.getOriginalProfile().withName(getOfflinePlayerName(uuid, event.getUsername())));
     }
+  }
+
+  private void updateOfflineName(String name) {
+      try {
+        List<RegisteredPlayer> onlinePlayers = playerDao.queryForFieldValues(Map.of(RegisteredPlayer.LOWERCASE_NICKNAME_FIELD, name.toLowerCase(), RegisteredPlayer.ACCOUNT_TYPE_FIELD, AccountType.OFFLINE));
+        for (RegisteredPlayer player : onlinePlayers) {
+          if (!player.getNickname().startsWith(Settings.IMP.MAIN.OFFLINE_MODE_PREFIX)) {
+            player.setNickname(Settings.IMP.MAIN.OFFLINE_MODE_PREFIX + player.getNickname());
+          }
+          playerDao.update(player);
+        }
+      } catch (SQLException e) {
+          throw new SQLRuntimeException(e);
+      }
+  }
+
+  public String getOfflinePlayerName(UUID uuid, String name) {
+      try {
+        RegisteredPlayer player = playerDao.queryForId(uuid.toString());
+        List<RegisteredPlayer> onlinePlayers = playerDao.queryForFieldValues(Map.of(RegisteredPlayer.LOWERCASE_NICKNAME_FIELD, name.toLowerCase(), RegisteredPlayer.ACCOUNT_TYPE_FIELD, AccountType.ONLINE));
+        String result = name;
+        if (player != null) {
+          result = player.getNickname();
+        }
+        if (!onlinePlayers.isEmpty()) {
+          if (!result.startsWith(Settings.IMP.MAIN.OFFLINE_MODE_PREFIX)) {
+            result = Settings.IMP.MAIN.OFFLINE_MODE_PREFIX + result;
+          }
+        } else {
+          if (result.startsWith(Settings.IMP.MAIN.OFFLINE_MODE_PREFIX)) {
+            result = result.substring(Settings.IMP.MAIN.OFFLINE_MODE_PREFIX.length());
+          }
+        }
+        return result;
+      } catch (SQLException e) {
+          throw new SQLRuntimeException(e);
+      }
   }
 
   static {

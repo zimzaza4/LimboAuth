@@ -33,6 +33,7 @@ import java.sql.SQLException;
 import java.text.MessageFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -47,6 +48,7 @@ import net.elytrium.limboauth.event.PostAuthorizationEvent;
 import net.elytrium.limboauth.event.PostRegisterEvent;
 import net.elytrium.limboauth.event.TaskEvent;
 import net.elytrium.limboauth.migration.MigrationHash;
+import net.elytrium.limboauth.model.AccountType;
 import net.elytrium.limboauth.model.RegisteredPlayer;
 import net.elytrium.limboauth.model.SQLRuntimeException;
 import net.kyori.adventure.bossbar.BossBar;
@@ -135,7 +137,8 @@ public class AuthSessionHandler implements LimboSessionHandler {
 
     Serializer serializer = LimboAuth.getSerializer();
 
-    String name = RegisteredPlayer.getPlayerName(this.proxyPlayer);
+    String name = player.getProxyPlayer().getUsername();
+    /*
     RegisteredPlayer sameNamePlayer = fetchInfo(playerDao, name.toLowerCase());
     if (sameNamePlayer != null && !sameNamePlayer.getNickname().equals(name)) {
       this.proxyPlayer.disconnect(serializer.deserialize(
@@ -143,6 +146,7 @@ public class AuthSessionHandler implements LimboSessionHandler {
       );
       return;
     }
+     */
 
     if (this.playerInfo == null) {
       try {
@@ -565,7 +569,7 @@ public class AuthSessionHandler implements LimboSessionHandler {
 
   public static RegisteredPlayer fetchInfoLowercased(Dao<RegisteredPlayer, String> playerDao, String nickname) {
     try {
-      List<RegisteredPlayer> playerList = playerDao.queryForEq(RegisteredPlayer.LOWERCASE_NICKNAME_FIELD, nickname);
+      List<RegisteredPlayer> playerList = playerDao.queryForFieldValues(Map.of(RegisteredPlayer.LOWERCASE_NICKNAME_FIELD, nickname, RegisteredPlayer.ACCOUNT_TYPE_FIELD, AccountType.OFFLINE));
       return (playerList != null ? playerList.size() : 0) == 0 ? null : playerList.get(0);
     } catch (SQLException e) {
       throw new SQLRuntimeException(e);

@@ -29,6 +29,7 @@ import net.elytrium.limboauth.Settings;
 @DatabaseTable(tableName = "AUTH")
 public class RegisteredPlayer {
 
+  public static final String UUID_FIELD = "UUID";
   public static final String NICKNAME_FIELD = "NICKNAME";
   public static final String LOWERCASE_NICKNAME_FIELD = "LOWERCASENICKNAME";
   public static final String HASH_FIELD = "HASH";
@@ -37,16 +38,19 @@ public class RegisteredPlayer {
   public static final String TOTP_TOKEN_FIELD = "TOTPTOKEN";
   public static final String REG_DATE_FIELD = "REGDATE";
   public static final String LOGIN_DATE_FIELD = "LOGINDATE";
-  public static final String UUID_FIELD = "UUID";
   public static final String PREMIUM_UUID_FIELD = "PREMIUMUUID";
+  public static final String ACCOUNT_TYPE_FIELD = "ACCOUNTTYPE";
   public static final String TOKEN_ISSUED_AT_FIELD = "ISSUEDTIME";
 
   private static final BCrypt.Hasher HASHER = BCrypt.withDefaults();
 
+  @DatabaseField(id = true, columnName = UUID_FIELD)
+  private String uuid = "";
+
   @DatabaseField(canBeNull = false, columnName = NICKNAME_FIELD)
   private String nickname;
 
-  @DatabaseField(columnName = LOWERCASE_NICKNAME_FIELD)
+  @DatabaseField(columnName = LOWERCASE_NICKNAME_FIELD, index = true)
   private String lowercaseNickname;
 
   @DatabaseField(canBeNull = false, columnName = HASH_FIELD)
@@ -61,11 +65,11 @@ public class RegisteredPlayer {
   @DatabaseField(columnName = REG_DATE_FIELD)
   private Long regDate = System.currentTimeMillis();
 
-  @DatabaseField(id = true, columnName = UUID_FIELD)
-  private String uuid = "";
-
   @DatabaseField(columnName = RegisteredPlayer.PREMIUM_UUID_FIELD, index = true)
   private String premiumUuid = "";
+
+  @DatabaseField(columnName = ACCOUNT_TYPE_FIELD)
+  private String accountType;
 
   @DatabaseField(columnName = LOGIN_IP_FIELD)
   private String loginIp;
@@ -78,7 +82,7 @@ public class RegisteredPlayer {
 
   @Deprecated
   public RegisteredPlayer(String nickname, String lowercaseNickname,
-      String hash, String ip, String totpToken, Long regDate, String uuid, String premiumUuid, String loginIp, Long loginDate) {
+      String hash, String ip, String totpToken, Long regDate, String uuid, String accountType, String premiumUuid, String loginIp, Long loginDate) {
     this.nickname = nickname;
     this.lowercaseNickname = lowercaseNickname;
     this.hash = hash;
@@ -86,24 +90,26 @@ public class RegisteredPlayer {
     this.totpToken = totpToken;
     this.regDate = regDate;
     this.uuid = uuid;
+    this.accountType = accountType;
     this.premiumUuid = premiumUuid;
     this.loginIp = loginIp;
     this.loginDate = loginDate;
   }
 
   public RegisteredPlayer(Player player) {
-    this(getPlayerName(player), player.getUniqueId(), player.getRemoteAddress());
+    this(player.getUsername(), player.getUniqueId(), player.getRemoteAddress(), player.isOnlineMode() ? AccountType.ONLINE : AccountType.OFFLINE);
   }
-  public RegisteredPlayer(String nickname, UUID uuid, InetSocketAddress ip) {
-    this(nickname, uuid.toString(), ip.getAddress().getHostAddress());
+  public RegisteredPlayer(String nickname, UUID uuid, InetSocketAddress ip, String accountType) {
+    this(nickname, uuid.toString(), ip.getAddress().getHostAddress(), accountType);
   }
 
-  public RegisteredPlayer(String nickname, String uuid, String ip) {
+  public RegisteredPlayer(String nickname, String uuid, String ip, String accountType) {
     this.nickname = nickname;
     this.lowercaseNickname = nickname.toLowerCase(Locale.ROOT);
     this.uuid = uuid;
     this.ip = ip;
     this.loginIp = ip;
+    this.accountType = accountType;
   }
 
   public RegisteredPlayer() {
@@ -193,6 +199,16 @@ public class RegisteredPlayer {
     return this;
   }
 
+  public RegisteredPlayer setAccountType(String accountType) {
+    this.accountType = accountType;
+
+    return this;
+  }
+
+  public String getAccountType() {
+    return accountType;
+  }
+
   public RegisteredPlayer setPremiumUuid(UUID premiumUuid) {
     this.premiumUuid = premiumUuid.toString();
 
@@ -233,12 +249,21 @@ public class RegisteredPlayer {
     return this;
   }
 
-  public static String getPlayerName(Player player) {
-    String name = player.getUsername();
-    if (!player.isOnlineMode() && !name.startsWith(Settings.IMP.MAIN.OFFLINE_MODE_PREFIX)) {
-      name = Settings.IMP.MAIN.OFFLINE_MODE_PREFIX + name;
-    }
-    return name;
+  @Override
+  public String toString() {
+    return "RegisteredPlayer{" +
+            "uuid='" + uuid + '\'' +
+            ", nickname='" + nickname + '\'' +
+            ", lowercaseNickname='" + lowercaseNickname + '\'' +
+            ", hash='" + hash + '\'' +
+            ", ip='" + ip + '\'' +
+            ", totpToken='" + totpToken + '\'' +
+            ", regDate=" + regDate +
+            ", premiumUuid='" + premiumUuid + '\'' +
+            ", accountType='" + accountType + '\'' +
+            ", loginIp='" + loginIp + '\'' +
+            ", loginDate=" + loginDate +
+            ", tokenIssuedAt=" + tokenIssuedAt +
+            '}';
   }
-
 }

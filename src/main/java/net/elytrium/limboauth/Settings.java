@@ -117,6 +117,8 @@ public class Settings extends YamlConfig {
     public String OFFLINE_MODE_PREFIX = "-";
     @Comment("This prefix will be added to online mode players nickname")
     public String ONLINE_MODE_PREFIX = "";
+    @Comment("For example, on.zim.icu or online.zim.icu")
+    public String ONLINE_MODE_HOST_KEY = "on";
     @Comment("For example, off.zim.icu or offline.zim.icu")
     public String OFFLINE_MODE_HOST_KEY = "off";
     @Comment({
@@ -504,6 +506,19 @@ public class Settings extends YamlConfig {
       public String DESTROY_SESSION_SUCCESSFUL = "{PRFX} &eYour session is now destroyed, you'll need to log in again after reconnecting.";
 
       public String MOD_SESSION_EXPIRED = "{PRFX} Your session has expired, log in again.";
+
+      public String KICK_SAME_NAME = "{PRFX} &e你的名字需要更新，很抱歉将您断开连接";
+    }
+
+    @Comment("Use Minimessage!!!")
+    @Create
+    public MAIN.STRINGS_AUTH_CHOOSE STRINGS_AUTH_CHOOSE;
+
+    public static class STRINGS_AUTH_CHOOSE {
+      public String MESSAGE = "<yellow>你是正版玩家吗？</yellow>\n<yellow>请正确选择, 这会影响你的登录方式</yellow>\n<green><click:run_command:/yes>[是的]</click></green>   <red><click:run_command:/no>[不是]</click></red>";
+      public String TITLE = "<yellow>请点击消息或者输入<green>/yes</green>或<red>/no</red></yellow>";
+      public String SUBTITLE = "";
+      public String TIMES_UP = "<red>选择超时</red>";
     }
   }
 

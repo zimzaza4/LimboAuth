@@ -28,6 +28,7 @@ import com.velocitypowered.api.util.UuidUtils;
 import net.elytrium.commons.kyori.serialization.Serializer;
 import net.elytrium.limboauth.LimboAuth;
 import net.elytrium.limboauth.Settings;
+import net.elytrium.limboauth.model.AccountType;
 import net.elytrium.limboauth.model.RegisteredPlayer;
 import net.elytrium.limboauth.model.SQLRuntimeException;
 import net.kyori.adventure.text.Component;
@@ -73,7 +74,7 @@ public class ForceRegisterCommand extends RatelimitedCommand {
           return;
         }
 
-        RegisteredPlayer player = new RegisteredPlayer(nickname, UuidUtils.generateOfflinePlayerUuid(nickname).toString(), "").setPassword(password);
+        RegisteredPlayer player = new RegisteredPlayer(nickname, UuidUtils.generateOfflinePlayerUuid(nickname).toString(), "", AccountType.OFFLINE).setPassword(password);
         this.playerDao.create(player);
 
         source.sendMessage(serializer.deserialize(MessageFormat.format(this.successful, nickname)));
