@@ -99,6 +99,7 @@ import net.elytrium.limboauth.handler.AuthSessionHandler;
 import net.elytrium.limboauth.handler.AuthTypeChooseHandler;
 import net.elytrium.limboauth.listener.AuthListener;
 import net.elytrium.limboauth.listener.BackendEndpointsListener;
+import net.elytrium.limboauth.model.AccountType;
 import net.elytrium.limboauth.model.AuthTypeRecord;
 import net.elytrium.limboauth.model.RegisteredPlayer;
 import net.elytrium.limboauth.model.SQLRuntimeException;
@@ -149,7 +150,6 @@ public class LimboAuth {
   private final HttpClient client = HttpClient.newHttpClient();
 
   private final ProxyServer server;
-  private final Metrics.Factory metricsFactory;
   private final Path dataDirectory;
   private final File dataDirectoryFile;
   private final File configFile;
@@ -181,11 +181,10 @@ public class LimboAuth {
   private Limbo chooseTypeServer;
 
   @Inject
-  public LimboAuth(Logger logger, ProxyServer server, Metrics.Factory metricsFactory, @DataDirectory Path dataDirectory) {
+  public LimboAuth(Logger logger, ProxyServer server, @DataDirectory Path dataDirectory) {
     setLogger(logger);
 
     this.server = server;
-    this.metricsFactory = metricsFactory;
     this.dataDirectory = dataDirectory;
 
     this.dataDirectoryFile = dataDirectory.toFile();
@@ -211,16 +210,6 @@ public class LimboAuth {
       LOGGER.error("SQL EXCEPTION CAUGHT.", exception);
       this.server.shutdown();
     }
-
-    Metrics metrics = this.metricsFactory.make(this, 13700);
-    metrics.addCustomChart(new SimplePie("floodgate_auth", () -> String.valueOf(Settings.IMP.MAIN.FLOODGATE_NEED_AUTH)));
-    metrics.addCustomChart(new SimplePie("premium_auth", () -> String.valueOf(Settings.IMP.MAIN.ONLINE_MODE_NEED_AUTH)));
-    metrics.addCustomChart(new SimplePie("db_type", () -> String.valueOf(Settings.IMP.DATABASE.STORAGE_TYPE)));
-    metrics.addCustomChart(new SimplePie("load_world", () -> String.valueOf(Settings.IMP.MAIN.LOAD_WORLD)));
-    metrics.addCustomChart(new SimplePie("totp_enabled", () -> String.valueOf(Settings.IMP.MAIN.ENABLE_TOTP)));
-    metrics.addCustomChart(new SimplePie("dimension", () -> String.valueOf(Settings.IMP.MAIN.DIMENSION)));
-    metrics.addCustomChart(new SimplePie("save_uuid", () -> String.valueOf(Settings.IMP.MAIN.SAVE_UUID)));
-    metrics.addCustomChart(new SingleLineChart("registered_players", () -> Math.toIntExact(this.playerDao.countOf())));
 
     /*
     this.server.getScheduler().buildTask(this, () -> {
@@ -636,7 +625,11 @@ public class LimboAuth {
           }
         }
         if (registeredPlayer == null && Settings.IMP.MAIN.SAVE_PREMIUM_ACCOUNTS) {
-          registeredPlayer = new RegisteredPlayer(player).setPremiumUuid(player.getUniqueId());
+          String type = onlineMode ? AccountType.ONLINE : AccountType.OFFLINE;
+          if (isFloodgate) {
+            type = AccountType.BEDROCK;
+          }
+          registeredPlayer = new RegisteredPlayer(player, type).setPremiumUuid(player.getUniqueId());
           try {
             this.playerDao.create(registeredPlayer);
           } catch (SQLException e) {

@@ -96,8 +96,8 @@ public class RegisteredPlayer {
     this.loginDate = loginDate;
   }
 
-  public RegisteredPlayer(Player player) {
-    this(player.getUsername(), player.getUniqueId(), player.getRemoteAddress(), player.isOnlineMode() ? AccountType.ONLINE : AccountType.OFFLINE);
+  public RegisteredPlayer(Player player, String accountType) {
+    this(player.getUsername(), player.getUniqueId(), player.getRemoteAddress(), accountType);
   }
   public RegisteredPlayer(String nickname, UUID uuid, InetSocketAddress ip, String accountType) {
     this(nickname, uuid.toString(), ip.getAddress().getHostAddress(), accountType);

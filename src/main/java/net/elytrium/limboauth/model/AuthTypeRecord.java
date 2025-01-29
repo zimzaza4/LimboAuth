@@ -7,6 +7,7 @@ import com.j256.ormlite.table.DatabaseTable;
 public class AuthTypeRecord {
     public static final String LOWERCASE_NICKNAME_FIELD = "LOWERCASENICKNAME";
     public static final String ONLINE = "ONLINE";
+    public static final String IP = "IP";
 
     @DatabaseField(id = true, columnName = LOWERCASE_NICKNAME_FIELD)
     private String lowercaseNickname = "";
@@ -14,12 +15,17 @@ public class AuthTypeRecord {
     @DatabaseField(columnName = ONLINE)
     private boolean online = false;
 
+    @DatabaseField(columnName = IP, index = true)
+    private String ip;
+
+
     public AuthTypeRecord() {
     }
 
-    public AuthTypeRecord(String lowercaseNickname, boolean online) {
+    public AuthTypeRecord(String lowercaseNickname, boolean online, String ip) {
         this.lowercaseNickname = lowercaseNickname.toLowerCase();
         this.online = online;
+        this.ip = ip;
     }
 
     public String getLowercaseNickname() {
@@ -36,5 +42,13 @@ public class AuthTypeRecord {
 
     public void setOnline(boolean online) {
         this.online = online;
+    }
+
+    public void setIp(String ip) {
+        this.ip = ip;
+    }
+
+    public String getIp() {
+        return ip;
     }
 }

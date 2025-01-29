@@ -3,30 +3,22 @@ package net.elytrium.limboauth.handler;
 import com.j256.ormlite.dao.Dao;
 import com.velocitypowered.api.network.ProtocolVersion;
 import com.velocitypowered.api.proxy.Player;
-import net.elytrium.commons.kyori.serialization.Serializer;
-import net.elytrium.commons.kyori.serialization.Serializers;
 import net.elytrium.limboapi.api.Limbo;
 import net.elytrium.limboapi.api.LimboFactory;
 import net.elytrium.limboapi.api.LimboSessionHandler;
-import net.elytrium.limboapi.api.material.Item;
-import net.elytrium.limboapi.api.material.VirtualItem;
 import net.elytrium.limboapi.api.player.LimboPlayer;
-import net.elytrium.limboapi.api.protocol.item.ItemComponentMap;
 import net.elytrium.limboauth.LimboAuth;
 import net.elytrium.limboauth.Settings;
 import net.elytrium.limboauth.model.AuthTypeRecord;
-import net.elytrium.limboauth.model.RegisteredPlayer;
 import net.elytrium.limboauth.model.SQLRuntimeException;
-import net.kyori.adventure.nbt.CompoundBinaryTag;
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.title.Title;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 import java.sql.SQLException;
-import java.text.MessageFormat;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -60,6 +52,15 @@ public class AuthTypeChooseHandler implements LimboSessionHandler {
         this.player = player;
         this.factory = plugin.getLimboFactory();
         int authTime = Settings.IMP.MAIN.AUTH_TIME;
+        String ip = proxyPlayer.getRemoteAddress().getAddress().getHostAddress();
+        try {
+            List<AuthTypeRecord> alreadyChosen = this.authTypeDao.queryForEq(AuthTypeRecord.IP, ip);
+            if (alreadyChosen.size() >= Settings.IMP.MAIN.IP_LIMIT_REGISTRATIONS) {
+                proxyPlayer.disconnect(AuthSessionHandler.ipLimitKick);
+            }
+        } catch (SQLException e) {
+            throw new SQLRuntimeException(e);
+        }
 
         mainTask = player.getScheduledExecutor().scheduleAtFixedRate(() -> {
             if (System.currentTimeMillis() - this.joinTime > authTime) {
@@ -87,16 +88,20 @@ public class AuthTypeChooseHandler implements LimboSessionHandler {
     }
 
     private void setAuthType(boolean online) {
-        AuthTypeRecord record = new AuthTypeRecord(plugin.getOriginalName(proxyPlayer.getUsername()), online);
+        AuthTypeRecord record = new AuthTypeRecord(plugin.getOriginalName(proxyPlayer.getUsername()), online, proxyPlayer.getRemoteAddress().getAddress().getHostAddress());
         try {
             authTypeDao.createIfNotExists(record);
         } catch (SQLException e) {
             throw new SQLRuntimeException(e);
         }
         if (online) {
+            if (proxyPlayer.getProtocolVersion().compareTo(ProtocolVersion.MINECRAFT_1_20_5) >= 0) {
+                proxyPlayer.getVirtualHost().ifPresent(proxyPlayer::transferToHost);
+            }
             proxyPlayer.disconnect(Component.text("Set to online auth! please rejoin to auth").color(NamedTextColor.GREEN));
+        } else {
+            player.disconnect();
         }
-        player.disconnect();
     }
 
     @Override

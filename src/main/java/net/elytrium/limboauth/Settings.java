@@ -510,6 +510,8 @@ public class Settings extends YamlConfig {
       public String KICK_SAME_NAME = "{PRFX} &e你的名字需要更新，很抱歉将您断开连接";
     }
 
+    public String TRANSFER_HOST = "play.imc.re";
+
     @Comment("Use Minimessage!!!")
     @Create
     public MAIN.STRINGS_AUTH_CHOOSE STRINGS_AUTH_CHOOSE;

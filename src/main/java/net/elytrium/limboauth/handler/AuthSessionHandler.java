@@ -65,7 +65,7 @@ public class AuthSessionHandler implements LimboSessionHandler {
   private static Component ratelimited;
   private static BossBar.Color bossbarColor;
   private static BossBar.Overlay bossbarOverlay;
-  private static Component ipLimitKick;
+  public static Component ipLimitKick;
   private static Component databaseErrorKick;
   private static String wrongNicknameCaseKick;
   private static Component timesUp;
@@ -220,7 +220,7 @@ public class AuthSessionHandler implements LimboSessionHandler {
         String password = args[1];
         if (this.checkPasswordsRepeat(args) && this.checkPasswordLength(password) && this.checkPasswordStrength(password)) {
           this.saveTempPassword(password);
-          RegisteredPlayer registeredPlayer = new RegisteredPlayer(this.proxyPlayer).setPassword(password);
+          RegisteredPlayer registeredPlayer = new RegisteredPlayer(this.proxyPlayer, AccountType.OFFLINE).setPassword(password);
 
           try {
             this.playerDao.create(registeredPlayer);
